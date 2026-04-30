@@ -276,7 +276,7 @@ export class RedditScheduler {
             for (const [groupId, feeds] of byGroup) {
                 yield* processGroup(client, groupId, feeds[0]!.channelId, feeds).pipe(
                     Effect.catchAll((err) =>
-                        Effect.sync(() => console.error(`[RedditScheduler] Group ${groupId} error:`, err))
+                        Effect.sync(() => console.error(`[RedditScheduler] Group ${groupId} error [${err._tag}]:`, "reason" in err ? err.reason : "message" in err ? err.message : err))
                     )
                 );
                 yield* Effect.sleep("2 seconds");

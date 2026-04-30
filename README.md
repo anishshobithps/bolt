@@ -16,12 +16,12 @@ Links are wrapped in **vxReddit** so embeds render properly on Discord.
 
 **Rotation algorithms**
 
-| Algorithm | Behavior |
-|---|---|
+| Algorithm         | Behavior                                                             |
+| ----------------- | -------------------------------------------------------------------- |
 | `weighted-random` | Feeds are sampled randomly, weighted by their weight value. Default. |
-| `round-robin` | Cycles through feeds alphabetically, one at a time. Ignores weight. |
-| `least-recent` | Always picks whichever feed posted least recently. |
-| `strict-priority` | Highest-weight feed always wins. Ties broken by least-recent. |
+| `round-robin`     | Cycles through feeds alphabetically, one at a time. Ignores weight.  |
+| `least-recent`    | Always picks whichever feed posted least recently.                   |
+| `strict-priority` | Highest-weight feed always wins. Ties broken by least-recent.        |
 
 **Comment threads** — Set `comments:true` on a feed and Bolt posts a "Discuss" button with each post. Clicking it opens a thread on that message so conversation stays organized.
 
