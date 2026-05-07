@@ -1,6 +1,5 @@
 import { Command } from "@sapphire/framework";
 import { MessageFlags } from "discord.js";
-import { guildId } from "../index.js";
 
 const OVERVIEW_TEXT = [
     "### Bolt — Command Reference",
@@ -107,7 +106,7 @@ export class HelpCommand extends Command {
                                 { name: "Starboard", value: "starboard" }
                             )
                     ),
-            { idHints: [], guildIds: guildId ? [guildId] : [] }
+            { idHints: [] }
         );
     }
 

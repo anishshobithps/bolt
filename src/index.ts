@@ -8,10 +8,7 @@ import { DbLive } from "./lib/db.js";
 
 ApplicationCommandRegistries.setDefaultBehaviorWhenNotIdentical(RegisterBehavior.BulkOverwrite);
 
-const guildId = process.env.GUILD_ID;
-
 export const AppLayer = Layer.mergeAll(DbLive);
-export { guildId };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +18,7 @@ const client = new SapphireClient({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildMembers,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
     logger: { level: LogLevel.Info },

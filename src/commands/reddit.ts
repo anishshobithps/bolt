@@ -1,7 +1,7 @@
 import { Command } from "@sapphire/framework";
 import { ChannelType, MessageFlags, PermissionFlagsBits, type AutocompleteInteraction } from "discord.js";
 import { Effect } from "effect";
-import { AppLayer, guildId } from "../index.js";
+import { AppLayer } from "../index.js";
 import { getRedditGroup, listRedditFeeds, listRedditGroups } from "../lib/db.js";
 import { ROTATION_ALGORITHM_CHOICES } from "../lib/reddit-rotation.js";
 import {
@@ -231,7 +231,7 @@ export class RedditCommand extends Command {
                                     )
                             )
                     ),
-            { idHints: [], guildIds: guildId ? [guildId] : [] }
+            { idHints: [] }
         );
     }
 

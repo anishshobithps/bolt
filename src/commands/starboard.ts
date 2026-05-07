@@ -1,7 +1,7 @@
 import { Command } from "@sapphire/framework";
 import { ChannelType, MessageFlags, PermissionFlagsBits } from "discord.js";
 import { Effect } from "effect";
-import { AppLayer, guildId } from "../index.js";
+import { AppLayer } from "../index.js";
 import { setStarboardChannel, setStarboardThreshold, removeStarboardChannel } from "../lib/db.js";
 
 export class StarboardCommand extends Command {
@@ -52,7 +52,7 @@ export class StarboardCommand extends Command {
                     .addSubcommand((sub) =>
                         sub.setName("unset").setDescription("Disable the starboard for this server")
                     ),
-            { idHints: ["1499158513719574711"], guildIds: guildId ? [guildId] : [] }
+            { idHints: ["1499158513719574711"] }
         );
     }
 
