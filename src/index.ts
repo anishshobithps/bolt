@@ -22,6 +22,7 @@ const client = new SapphireClient({
         GatewayIntentBits.GuildMembers,
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    defaultPrefix: "b!",
     logger: { level: LogLevel.Info },
     loadMessageCommandListeners: true,
     baseUserDirectory: join(__dirname),

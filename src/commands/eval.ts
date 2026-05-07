@@ -1,6 +1,7 @@
 import { Args, Command } from "@sapphire/framework";
 import { send } from "@sapphire/plugin-editable-commands";
 import { Stopwatch } from "@sapphire/stopwatch";
+import { Type } from "@sapphire/type";
 import { codeBlock, type Message } from "discord.js";
 import { inspect } from "node:util";
 
@@ -71,7 +72,7 @@ export class EvalCommand extends Command {
             if (result instanceof Promise) result = await result;
 
             stopwatch.stop();
-            typeName = getType(result);
+            typeName = new Type(result).toString();
             success = true;
         } catch (error) {
             stopwatch.stop();
@@ -98,16 +99,4 @@ export class EvalCommand extends Command {
 
         return send(message, content);
     }
-}
-
-function getType(value: unknown): string {
-    if (value === null) return "null";
-    if (value === undefined) return "undefined";
-    if (Array.isArray(value)) return `Array<${(value as unknown[]).length}>`;
-    if (value instanceof Promise) return "Promise";
-    if (value instanceof Map) return `Map<${(value as Map<unknown, unknown>).size}>`;
-    if (value instanceof Set) return `Set<${(value as Set<unknown>).size}>`;
-    if (value instanceof Error) return value.constructor.name;
-    if (typeof value === "object") return value.constructor?.name ?? "Object";
-    return typeof value;
 }
