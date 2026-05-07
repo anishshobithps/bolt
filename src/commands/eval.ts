@@ -1,18 +1,14 @@
-import { Command } from "@sapphire/framework";
+import { Args, Command } from "@sapphire/framework";
+import { send } from "@sapphire/plugin-editable-commands";
 import { Stopwatch } from "@sapphire/stopwatch";
-import { codeBlock, MessageFlags } from "discord.js";
+import { codeBlock, type Message } from "discord.js";
 import { inspect } from "node:util";
 
 const MAX_OUTPUT_LENGTH = 1900;
 
-/**
- * Replaces any process.env value that appears in the output string with a
- * redaction placeholder, preventing accidental token or secret leakage.
- */
 function redactSecrets(str: string): string {
     for (const [key, value] of Object.entries(process.env)) {
         if (value && value.length >= 8) {
-            // Use a global literal replacement without regex to avoid ReDoS
             str = str.split(value).join(`[REDACTED:${key}]`);
         }
     }
@@ -25,63 +21,41 @@ function truncate(str: string, max: number): string {
     return `${str.slice(0, max)}\n… (${overflow} more characters)`;
 }
 
+/** Strip surrounding triple-backtick code block markers if present. */
+function cleanCode(raw: string): string {
+    const match = raw.match(/^```(?:\w+\n)?([\s\S]+?)```$/);
+    return match?.[1]?.trim() ?? raw;
+}
+
 export class EvalCommand extends Command {
     public constructor(context: Command.LoaderContext, options: Command.Options) {
-        super(context, { ...options, name: "eval", preconditions: ["OwnerOnly"] });
+        super(context, {
+            ...options,
+            name: "eval",
+            preconditions: ["OwnerOnly"],
+            // Parsed as boolean flags: --async / -a
+            flags: ["async", "a"],
+            // Parsed as value options: --depth=N / -d N
+            options: ["depth", "d"],
+        });
     }
 
-    public override registerApplicationCommands(registry: Command.Registry) {
-        registry.registerChatInputCommand(
-            (builder) =>
-                builder
-                    .setName("eval")
-                    .setDescription("Evaluate JavaScript/TypeScript code (bot owner only)")
-                    .addStringOption((opt) =>
-                        opt
-                            .setName("code")
-                            .setDescription("The code to evaluate")
-                            .setRequired(true)
-                    )
-                    .addIntegerOption((opt) =>
-                        opt
-                            .setName("depth")
-                            .setDescription("util.inspect depth for objects (default: 2, max: 10)")
-                            .setMinValue(0)
-                            .setMaxValue(10)
-                            .setRequired(false)
-                    )
-                    .addBooleanOption((opt) =>
-                        opt
-                            .setName("async")
-                            .setDescription(
-                                "Wrap code in an async IIFE so you can use top-level await (default: false)"
-                            )
-                            .setRequired(false)
-                    )
-                    .addBooleanOption((opt) =>
-                        opt
-                            .setName("silent")
-                            .setDescription("Reply ephemerally so only you can see the output (default: true)")
-                            .setRequired(false)
-                    ),
-            { idHints: [] }
-        );
-    }
+    public override async messageRun(message: Message, args: Args) {
+        const isAsync = args.getFlags("async", "a");
+        const depthStr = args.getOption("depth", "d");
+        const depth = depthStr ? Math.min(10, Math.max(0, Number.parseInt(depthStr, 10))) : 2;
 
-    public override async chatInputRun(interaction: Command.ChatInputCommandInteraction) {
-        const code = interaction.options.getString("code", true);
-        const depth = interaction.options.getInteger("depth") ?? 2;
-        const isAsync = interaction.options.getBoolean("async") ?? false;
-        const silent = interaction.options.getBoolean("silent") ?? true;
+        const raw = await args.rest("string").catch(() => null);
+        if (!raw) return send(message, "❌ Please provide code to evaluate.");
 
-        await interaction.deferReply({ flags: silent ? MessageFlags.Ephemeral : undefined });
+        const code = cleanCode(raw);
 
         // Expose useful references inside the eval scope via closure
         /* eslint-disable @typescript-eslint/no-unused-vars */
         const client = this.container.client;
         const { container } = this;
-        const guild = interaction.guild;
-        const channel = interaction.channel;
+        const guild = message.guild;
+        const channel = message.channel;
         /* eslint-enable @typescript-eslint/no-unused-vars */
 
         const stopwatch = new Stopwatch();
@@ -91,13 +65,10 @@ export class EvalCommand extends Command {
 
         try {
             const toEval = isAsync ? `(async () => {\n${code}\n})()` : code;
-            // Direct eval — intentional developer tool, access already gated by OwnerOnly precondition
             // biome-ignore lint/security/noEval: intentional eval command for bot owner
             result = eval(toEval); // eslint-disable-line no-eval
 
-            if (result instanceof Promise) {
-                result = await result;
-            }
+            if (result instanceof Promise) result = await result;
 
             stopwatch.stop();
             typeName = getType(result);
@@ -113,7 +84,7 @@ export class EvalCommand extends Command {
         if (typeof result === "string") {
             output = result;
         } else {
-            output = inspect(result, { depth, colors: false, maxArrayLength: 50, breakLength: 80 });
+            output = inspect(result, { depth, colors: false });
         }
 
         output = redactSecrets(output);
@@ -125,7 +96,7 @@ export class EvalCommand extends Command {
             codeBlock("js", output),
         ].join("\n");
 
-        return interaction.editReply({ content });
+        return send(message, content);
     }
 }
 

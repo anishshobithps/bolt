@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "@sapphire/plugin-editable-commands/register";
 import { SapphireClient, LogLevel, ApplicationCommandRegistries, RegisterBehavior } from "@sapphire/framework";
 import { GatewayIntentBits, Partials } from "discord.js";
 import { Layer } from "effect";
