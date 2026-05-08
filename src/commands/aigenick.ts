@@ -230,6 +230,12 @@ export class AiGenNickCommand extends Command {
                         .setName("target")
                         .setDescription("Member to rename — requires Manage Nicknames permission")
                         .setRequired(false),
+                )
+                .addBooleanOption((opt) =>
+                    opt
+                        .setName("force")
+                        .setDescription("Ignore the cache and generate a fresh nickname")
+                        .setRequired(false),
                 ),
         );
     }
@@ -243,6 +249,7 @@ export class AiGenNickCommand extends Command {
 
         const invoker = interaction.member as GuildMember;
         const targetUser = interaction.options.getUser("target");
+        const force = interaction.options.getBoolean("force") ?? false;
 
         if (targetUser && targetUser.id !== interaction.user.id) {
             if (!invoker.permissions.has(PermissionFlagsBits.ManageNicknames)) {
@@ -294,6 +301,7 @@ export class AiGenNickCommand extends Command {
             let fromCache = false;
 
             if (
+                !force &&
                 cached !== undefined &&
                 now - cached.createdAt < CACHE_MAX_AGE_MS &&
                 cached.distance < VECTOR_DISTANCE_THRESHOLD
@@ -324,6 +332,7 @@ export class AiGenNickCommand extends Command {
                         content: isSelf
                             ? `🤖 Analysed **${messages.length}** message(s) and the AI has spoken.${cacheNote}\nYou are now known as: **${nickname}**`
                             : `🤖 Analysed **${messages.length}** message(s) from ${targetMember.toString()} and the AI has spoken.${cacheNote}\nThey are now known as: **${nickname}**`,
+                        allowedMentions: { users: [] },
                     }),
                 catch: () => new DiscordFetchError({ reason: "Failed to edit reply." }),
             });
