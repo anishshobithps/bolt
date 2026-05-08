@@ -1,5 +1,5 @@
 import { Command } from "@sapphire/framework";
-import { ChannelType, type GuildMember, MessageFlags, PermissionFlagsBits, type TextChannel } from "discord.js";
+import { ChannelType, type GuildMember, PermissionFlagsBits, type TextChannel } from "discord.js";
 import { Data, Effect } from "effect";
 import { AppLayer } from "../index.js";
 import {
@@ -13,7 +13,7 @@ const MAX_MESSAGES = 100;
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings";
 const FETCH_DELAY_MS = 150;
-const MODEL = "nousresearch/hermes-3-llama-3.1-405b";
+const MODEL = "google/gemma-3-27b-it";
 const EMBED_MODEL = "openai/text-embedding-3-small";
 const MAX_PAGES_PER_CHANNEL = 5;
 const GUILD_COOLDOWN_MS = 30_000;
@@ -73,7 +73,13 @@ const collectUserMessages = (member: GuildMember, maxCount: number) =>
                 for (const msg of sorted) {
                     if (collected.length >= maxCount) break;
                     if (msg.author.id === member.id && msg.content.trim().length > 0) {
-                        collected.push(msg.content.trim());
+                        const cleaned = msg.content
+                            .replace(/<@!?\d+>/g, "")
+                            .replace(/<#\d+>/g, "")
+                            .replace(/<@&\d+>/g, "")
+                            .replace(/\s{2,}/g, " ")
+                            .trim();
+                        if (cleaned.length > 0) collected.push(cleaned);
                     }
                 }
 
@@ -232,7 +238,6 @@ export class AiGenNickCommand extends Command {
         if (!interaction.guild || !(interaction.member instanceof Object)) {
             return interaction.reply({
                 content: "❌ This command can only be used inside a server.",
-                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -243,12 +248,11 @@ export class AiGenNickCommand extends Command {
             if (!invoker.permissions.has(PermissionFlagsBits.ManageNicknames)) {
                 return interaction.reply({
                     content: "❌ You need the **Manage Nicknames** permission to rename other members.",
-                    flags: MessageFlags.Ephemeral,
                 });
             }
         }
 
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        await interaction.deferReply();
 
         const program = Effect.gen(function* () {
             const lastUsed = yield* getGuildCooldown(interaction.guildId!);
