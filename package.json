@@ -23,5 +23,8 @@
     "discord.js": "^14.26.3",
     "dotenv": "^17.4.2",
     "effect": "^3.21.2"
-  }
+  },
+  "trustedDependencies": [
+    "@sapphire/type"
+  ]
 }
