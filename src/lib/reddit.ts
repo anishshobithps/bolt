@@ -6,7 +6,7 @@ export { type PostSource };
 const REDDIT_BASE = "https://www.reddit.com";
 const VX_REDDIT_BASE = "https://vxreddit.com";
 const FIX_REDDIT_BASE = "https://rxddit.com";
-const USER_AGENT = "bolt-discord-bot/1.0";
+const USER_AGENT = process.env.REDDIT_USER_AGENT;
 
 export class RedditError extends Data.TaggedError("RedditError")<{
     readonly reason: string;
