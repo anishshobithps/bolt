@@ -92,7 +92,10 @@ export function scorePost(post: RedditPost, weight: number): number {
 }
 
 const retrySchedule = Schedule.exponential("1 second").pipe(
-    Schedule.intersect(Schedule.recurs(3))
+    Schedule.intersect(Schedule.recurs(3)),
+    Schedule.whileInput((err: RedditError) =>
+        err.reason === "RATE_LIMITED" || err.reason.startsWith("HTTP_5")
+    )
 );
 
 const decodePost = Schema.decodeUnknown(RedditPostSchema);
