@@ -19,7 +19,6 @@
     "@sapphire/framework": "^5.5.0",
     "@sapphire/plugin-editable-commands": "^4.0.4",
     "@sapphire/stopwatch": "^1.5.4",
-    "@sapphire/type": "^2.6.0",
     "discord.js": "^14.26.3",
     "dotenv": "^17.4.2",
     "effect": "^3.21.2"
