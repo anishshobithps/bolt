@@ -580,3 +580,118 @@ export const markPostsSeen = (groupId: number, postIds: string[]) =>
             catch: () => new DbError({ message: "" }),
         }).pipe(Effect.ignore);
     });
+
+export const AIGENICK_EMBEDDING_DIMS = 1536;
+
+export const initAigenickDb = Effect.gen(function* () {
+    const db = yield* Db;
+    yield* Effect.tryPromise({
+        try: () =>
+            db.batch(
+                [
+                    `CREATE TABLE IF NOT EXISTS aigenick_cache (
+                        guild_id      TEXT    NOT NULL,
+                        user_id       TEXT    NOT NULL,
+                        nickname      TEXT    NOT NULL,
+                        message_count INTEGER NOT NULL,
+                        embedding     F32_BLOB(${AIGENICK_EMBEDDING_DIMS}),
+                        created_at    INTEGER NOT NULL,
+                        PRIMARY KEY (guild_id, user_id)
+                    )`,
+                    `CREATE INDEX IF NOT EXISTS aigenick_cache_vec_idx
+                        ON aigenick_cache (libsql_vector_idx(embedding))`,
+                    `CREATE TABLE IF NOT EXISTS aigenick_guild_cooldown (
+                        guild_id     TEXT    PRIMARY KEY,
+                        last_used_at INTEGER NOT NULL
+                    )`,
+                ],
+                "write"
+            ),
+        catch: (err) => new DbError({ message: `Failed to init aigenick schema: ${err}` }),
+    });
+});
+
+export type AigenickCacheEntry = {
+    nickname: string;
+    messageCount: number;
+    createdAt: number;
+    distance: number;
+};
+
+export const getAigenickEntry = (guildId: string, userId: string, embeddingJson: string) =>
+    Effect.gen(function* () {
+        const db = yield* Db;
+        const result = yield* Effect.tryPromise({
+            try: () =>
+                db.execute({
+                    sql: `SELECT nickname, message_count, created_at,
+                                 vector_distance_cos(embedding, vector32(?)) AS dist
+                          FROM aigenick_cache
+                          WHERE guild_id = ? AND user_id = ?`,
+                    args: [embeddingJson, guildId, userId],
+                }),
+            catch: (err) => new DbError({ message: `Failed to get aigenick entry: ${err}` }),
+        });
+        const row = result.rows[0];
+        if (!row) return undefined;
+        return {
+            nickname: row.nickname as string,
+            messageCount: row.message_count as number,
+            createdAt: row.created_at as number,
+            distance: row.dist as number,
+        } satisfies AigenickCacheEntry;
+    });
+
+export const setAigenickEntry = (
+    guildId: string,
+    userId: string,
+    nickname: string,
+    messageCount: number,
+    embeddingJson: string,
+) =>
+    Effect.gen(function* () {
+        const db = yield* Db;
+        yield* Effect.tryPromise({
+            try: () =>
+                db.execute({
+                    sql: `INSERT INTO aigenick_cache (guild_id, user_id, nickname, message_count, embedding, created_at)
+                          VALUES (?, ?, ?, ?, vector32(?), ?)
+                          ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                              nickname      = excluded.nickname,
+                              message_count = excluded.message_count,
+                              embedding     = excluded.embedding,
+                              created_at    = excluded.created_at`,
+                    args: [guildId, userId, nickname, messageCount, embeddingJson, Date.now()],
+                }),
+            catch: (err) => new DbError({ message: `Failed to set aigenick entry: ${err}` }),
+        });
+    });
+
+export const getGuildCooldown = (guildId: string) =>
+    Effect.gen(function* () {
+        const db = yield* Db;
+        const result = yield* Effect.tryPromise({
+            try: () =>
+                db.execute({
+                    sql: "SELECT last_used_at FROM aigenick_guild_cooldown WHERE guild_id = ?",
+                    args: [guildId],
+                }),
+            catch: (err) => new DbError({ message: `Failed to get guild cooldown: ${err}` }),
+        });
+        return result.rows[0]?.last_used_at as number | undefined;
+    });
+
+export const setGuildCooldown = (guildId: string) =>
+    Effect.gen(function* () {
+        const db = yield* Db;
+        yield* Effect.tryPromise({
+            try: () =>
+                db.execute({
+                    sql: `INSERT INTO aigenick_guild_cooldown (guild_id, last_used_at)
+                          VALUES (?, ?)
+                          ON CONFLICT(guild_id) DO UPDATE SET last_used_at = excluded.last_used_at`,
+                    args: [guildId, Date.now()],
+                }),
+            catch: (err) => new DbError({ message: `Failed to set guild cooldown: ${err}` }),
+        });
+    });
