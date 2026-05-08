@@ -126,7 +126,7 @@ const processGroup = Effect.fn("processGroup")(function* (
     const textChannel = channel as TextChannel;
 
     const posts = yield* fetchPosts(selected.subreddit, selected.source, 25).pipe(
-        Effect.mapError((err) => new SchedulerError({ reason: err.reason }))
+        Effect.mapError((err) => new SchedulerError({ reason: `r/${selected.subreddit} (${selected.source}): ${err.reason}` }))
     );
 
     const seenIds = yield* getSeenPostIds(groupId);
@@ -276,7 +276,7 @@ export class RedditScheduler {
             for (const [groupId, feeds] of byGroup) {
                 yield* processGroup(client, groupId, feeds[0]!.channelId, feeds).pipe(
                     Effect.catchAll((err) =>
-                        Effect.sync(() => console.error(`[RedditScheduler] Group ${groupId} error [${err._tag}]:`, "reason" in err ? err.reason : "message" in err ? err.message : err))
+                        Effect.sync(() => console.error(`[RedditScheduler] Group ${groupId} (channel: ${feeds[0]!.channelId}) error [${err._tag}]:`, "reason" in err ? err.reason : "message" in err ? err.message : err))
                     )
                 );
                 yield* Effect.sleep("2 seconds");

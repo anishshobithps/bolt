@@ -94,7 +94,7 @@ export function scorePost(post: RedditPost, weight: number): number {
 const retrySchedule = Schedule.exponential("1 second").pipe(
     Schedule.intersect(Schedule.recurs(3)),
     Schedule.whileInput((err: RedditError) =>
-        err.reason === "RATE_LIMITED" || err.reason.startsWith("HTTP_5")
+        err.reason.startsWith("HTTP_429") || err.reason.startsWith("HTTP_5")
     )
 );
 
@@ -108,10 +108,11 @@ const redditFetch = (url: string): Effect.Effect<unknown, RedditError> =>
                 headers: { "User-Agent": USER_AGENT },
                 signal: AbortSignal.timeout(15_000),
             });
-            if (res.status === 429) throw new Error("RATE_LIMITED");
-            if (res.status === 404) throw new Error("NOT_FOUND");
-            if (res.status === 403) throw new Error("FORBIDDEN");
-            if (!res.ok) throw new Error(`HTTP_${res.status}`);
+            if (!res.ok) {
+                const body = await res.text().catch(() => "");
+                const snippet = body.slice(0, 200).replace(/\s+/g, " ").trim();
+                throw new Error(`HTTP_${res.status} ${res.statusText}${snippet ? ` — ${snippet}` : ""}`);
+            }
             return await res.json() as unknown;
         },
         catch: (err) => new RedditError({ reason: err instanceof Error ? err.message : String(err) }),
