@@ -14,6 +14,7 @@ export class ReadyListener extends Listener<typeof Events.ClientReady> {
         await Effect.runPromise(initDb.pipe(Effect.provide(AppLayer)));
         await Effect.runPromise(initRedditDb.pipe(Effect.provide(AppLayer)));
         redditScheduler.start(client);
+        await Promise.all(client.guilds.cache.map((guild) => guild.members.fetch()));
         container.logger.info(`Online as ${client.user.tag}`);
     }
 }
