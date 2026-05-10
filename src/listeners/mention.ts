@@ -100,7 +100,7 @@ const getHistory = (guildId: string, userId: string) =>
             try: () => redis.eval(LUA_TTL_REFRESH, [key], [String(HISTORY_TTL_SECS)]),
             catch: () => new MentionApiError({ message: "TTL refresh failed" }),
         }).pipe(Effect.ignore);
-        return (Array.isArray(raw) ? raw as string[] : []).map((s: string) => JSON.parse(s) as ChatMessage);
+        return (Array.isArray(raw) ? raw as unknown as ChatMessage[] : []);
     });
 
 const checkRateLimit = (guildId: string, userId: string) =>
