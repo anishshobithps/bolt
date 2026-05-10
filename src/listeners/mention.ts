@@ -11,19 +11,22 @@ const LONG_TOTAL_LIMIT = 5000;
 const LONG_TRIGGER =
     /\b(detail|detailed|explain|elaborate|full|long|thorough|comprehensive|in[\s-]depth|step[\s-]by[\s-]step|more info|tell me more|expand)\b/i;
 
+const RESET_TRIGGER =
+    /^(reset|forget|clear|wipe)\s*(my\s*)?(memory|history|chat|context|conversation)?[.!?]*$/i;
+
 const SHORT_SYSTEM =
-    `You are Bolt, a helpful Discord bot assistant with real-time web search (Wikipedia, news, general knowledge).\n` +
-    `Keep your answer under 1800 characters. Be concise but accurate.\n` +
+    "You are Bolt, a helpful Discord bot assistant with real-time web search (Wikipedia, news, general knowledge).\n" +
+    "Keep your answer under 1800 characters. Be concise but accurate.\n" +
     "Use Discord markdown: **bold**, *italic*, `inline code`, ```language\ncode blocks\n```, ## headers, - lists, > blockquotes.\n" +
-    `Do NOT write source links or citation sections — they are appended automatically.`;
+    "Do NOT write source links or citation sections \u2014 they are appended automatically.";
 
 const LONG_SYSTEM =
-    `You are Bolt, a helpful Discord bot assistant with real-time web search (Wikipedia, news, general knowledge).\n` +
-    `The user wants a detailed answer — you may use up to 4800 characters.\n` +
-    `Structure your response with ## headers and clear paragraph breaks so it splits cleanly.\n` +
-    "Always close every code block with ``` before a paragraph break — never leave a code block unclosed at a split point.\n" +
+    "You are Bolt, a helpful Discord bot assistant with real-time web search (Wikipedia, news, general knowledge).\n" +
+    "The user wants a detailed answer \u2014 you may use up to 4800 characters.\n" +
+    "Structure your response with ## headers and clear paragraph breaks so it splits cleanly.\n" +
+    "Always close every code block with ``` before a paragraph break \u2014 never leave a code block unclosed at a split point.\n" +
     "Use Discord markdown: **bold**, *italic*, `inline code`, ```language\ncode blocks\n```, ## headers, - lists, > blockquotes.\n" +
-    `Do NOT write source links or citation sections — they are appended automatically.`;
+    "Do NOT write source links or citation sections \u2014 they are appended automatically.";
 
 export class MentionApiError extends Data.TaggedError("MentionApiError")<{
     readonly message: string;
@@ -39,17 +42,26 @@ interface OpenRouterResponse {
     citations?: string[];
 }
 
-const channelHistory = new Map<string, ChatMessage[]>();
+const userHistory = new Map<string, ChatMessage[]>();
 
-function getHistory(channelId: string): ChatMessage[] {
-    if (!channelHistory.has(channelId)) channelHistory.set(channelId, []);
-    return channelHistory.get(channelId)!;
+function historyKey(guildId: string, userId: string): string {
+    return `${guildId}:${userId}`;
 }
 
-function pushToHistory(channelId: string, msg: ChatMessage): void {
-    const history = getHistory(channelId);
+function getHistory(guildId: string, userId: string): ChatMessage[] {
+    const key = historyKey(guildId, userId);
+    if (!userHistory.has(key)) userHistory.set(key, []);
+    return userHistory.get(key)!;
+}
+
+function pushToHistory(guildId: string, userId: string, msg: ChatMessage): void {
+    const history = getHistory(guildId, userId);
     history.push(msg);
     while (history.length > MAX_HISTORY) history.shift();
+}
+
+function clearHistory(guildId: string, userId: string): void {
+    userHistory.delete(historyKey(guildId, userId));
 }
 
 function formatSources(citations: string[]): string {
@@ -172,29 +184,50 @@ export class MentionListener extends Listener<typeof Events.MessageCreate> {
         if (!clientUser) return;
         if (!message.mentions.has(clientUser.id)) return;
 
-        const query = message.content
+        const guildId = message.guildId;
+        const userId = message.author.id;
+
+        const rawQuery = message.content
             .replace(new RegExp(`<@!?${clientUser.id}>`, "g"), "")
             .trim();
 
+        if (RESET_TRIGGER.test(rawQuery)) {
+            clearHistory(guildId, userId);
+            await message.reply({ content: "Memory cleared \u2014 starting fresh!", allowedMentions: { repliedUser: true } });
+            return;
+        }
+
+        let replyContext = "";
+        if (message.reference?.messageId) {
+            const referenced = await message.fetchReference().catch(() => null);
+            if (referenced && referenced.content.trim()) {
+                const mention = `<@${referenced.author.id}>`;
+                replyContext = `${mention}: "${referenced.content.replace(/\n+/g, " ").slice(0, 300)}"\n`;
+            }
+        }
+
+        const query = replyContext
+            ? `${replyContext}${rawQuery || "What do you think about the above message?"}`
+            : rawQuery;
+
         if (!query) {
-            await message.reply("Hey! Ask me anything — I can search the web, look up Wikipedia, and more.");
+            await message.reply("Hey! Ask me anything \u2014 I can search the web, look up Wikipedia, and more.");
             return;
         }
 
         await channel.sendTyping().catch(() => null);
 
         const isLong = LONG_TRIGGER.test(query);
-        const channelId = message.channelId;
 
-        pushToHistory(channelId, {
+        pushToHistory(guildId, userId, {
             role: "user",
             content: `${message.author.displayName}: ${query}`,
         });
 
         const result = await Effect.runPromise(
-            callOpenRouter(getHistory(channelId), isLong).pipe(
+            callOpenRouter(getHistory(guildId, userId), isLong).pipe(
                 Effect.catchAll((err) =>
-                    Effect.succeed({ content: `⚠️ ${err.message}`, citations: [] as string[] })
+                    Effect.succeed({ content: `\u26a0\ufe0f ${err.message}`, citations: [] as string[] })
                 )
             )
         );
@@ -204,12 +237,14 @@ export class MentionListener extends Listener<typeof Events.MessageCreate> {
             ? result.content.slice(0, LONG_TOTAL_LIMIT - sources.length)
             : result.content.slice(0, MSG_LIMIT - sources.length - 1);
 
-        pushToHistory(channelId, { role: "assistant", content: body });
+        pushToHistory(guildId, userId, { role: "assistant", content: body });
+
+        const noMentions = { repliedUser: true, users: [] };
 
         if (!isLong || body.length + sources.length <= MSG_LIMIT) {
             await message.reply({
                 content: body + sources,
-                allowedMentions: { repliedUser: true },
+                allowedMentions: noMentions,
             });
             return;
         }
@@ -220,17 +255,17 @@ export class MentionListener extends Listener<typeof Events.MessageCreate> {
         if (first) {
             await message.reply({
                 content: first,
-                allowedMentions: { repliedUser: true },
+                allowedMentions: noMentions,
             });
         }
 
         for (let i = 0; i < rest.length; i++) {
             const isLast = i === rest.length - 1;
-            await channel.send(isLast ? rest[i]! + sources : rest[i]!);
+            await channel.send({ content: isLast ? rest[i]! + sources : rest[i]!, allowedMentions: { users: [] } });
         }
 
         if (chunks.length === 1 && sources) {
-            await channel.send(sources.trimStart());
+            await channel.send({ content: sources.trimStart(), allowedMentions: { users: [] } });
         }
     }
 }
