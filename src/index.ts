@@ -6,10 +6,11 @@ import { Layer } from "effect";
 import { fileURLToPath } from "url";
 import { join, dirname } from "path";
 import { DbLive } from "./lib/db.js";
+import { RedisLive } from "./lib/redis.js";
 
 ApplicationCommandRegistries.setDefaultBehaviorWhenNotIdentical(RegisterBehavior.BulkOverwrite);
 
-export const AppLayer = Layer.mergeAll(DbLive);
+export const AppLayer = Layer.mergeAll(DbLive, RedisLive);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
