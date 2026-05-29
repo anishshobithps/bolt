@@ -188,9 +188,9 @@ const processGroup = Effect.fn("processGroup")(function* (
 
             if (pick.isVideo) {
                 const stats = `-# 👤 u/${pick.author}  ·  📍 r/${pick.subreddit}  ·  ⬆️ ${pick.score.toLocaleString()}  ·  💬 ${pick.numComments.toLocaleString()}  ·  ${Math.round(pick.upvoteRatio * 100)}% upvoted`;
-                const perma = rewriteUrl(pick.permalink, embedBase);
+                // Use plain reddit.com permalink for videos — vxreddit/rxddit strip audio
                 return textChannel.send({
-                    content: `### [${pick.title}](${perma})\n${stats}`,
+                    content: `### [${pick.title}](${pick.permalink})\n${stats}`,
                     ...(components.length > 0 ? { components } : {}),
                 });
             }

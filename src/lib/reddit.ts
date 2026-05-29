@@ -3,10 +3,10 @@ import { type PostSource } from "./db.js";
 
 export { type PostSource };
 
-const REDDIT_BASE = "https://www.reddit.com";
+const REDDIT_BASE = "https://old.reddit.com";
 const VX_REDDIT_BASE = "https://vxreddit.com";
 const FIX_REDDIT_BASE = "https://rxddit.com";
-const USER_AGENT = process.env.REDDIT_USER_AGENT;
+const USER_AGENT = process.env.REDDIT_USER_AGENT!;
 
 export class RedditError extends Data.TaggedError("RedditError")<{
     readonly reason: string;
@@ -166,7 +166,7 @@ export const fetchPosts = (
                 title: (p["title"] as string) ?? "Untitled",
                 author: (p["author"] as string) ?? "[deleted]",
                 url: (p["url"] as string) ?? "",
-                permalink: `${REDDIT_BASE}${p["permalink"] as string}`,
+                permalink: `https://www.reddit.com${p["permalink"] as string}`,
                 isVideo: Boolean(p["is_video"]),
                 isSelf: Boolean(p["is_self"]),
                 selftext: (p["selftext"] as string) ?? "",
