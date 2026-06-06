@@ -29,11 +29,14 @@ import {
 } from "./reddit.js";
 import { rotationSelector } from "./reddit-rotation.js";
 
-
 class SchedulerError extends Data.TaggedError("SchedulerError")<{
     readonly reason: string;
 }> { }
 
+const MSG_LIMIT = 2000;
+const EMBED_DESC_LIMIT = 4096;
+
+const channelCache = new Map<string, TextChannel>();
 
 function buildPostEmbed(post: RedditPost, embedBase: string): EmbedBuilder {
     const embed = new EmbedBuilder()
@@ -50,7 +53,6 @@ function buildPostEmbed(post: RedditPost, embedBase: string): EmbedBuilder {
         embed.setDescription(post.selftext.slice(0, EMBED_DESC_LIMIT));
     } else if (!post.isSelf && !post.isVideo) {
         const isDirectImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(post.url);
-        const isGallery = post.url.includes("/gallery/");
         if (isDirectImage) {
             embed.setImage(post.url);
         } else if (post.galleryImages && post.galleryImages.length > 0) {
@@ -64,9 +66,6 @@ function buildPostEmbed(post: RedditPost, embedBase: string): EmbedBuilder {
 
     return embed;
 }
-
-const MSG_LIMIT = 2000;
-const EMBED_DESC_LIMIT = 4096;
 
 async function sendSelftextOverflow(thread: AnyThreadChannel, selftext: string): Promise<void> {
     const overflow = selftext.slice(EMBED_DESC_LIMIT);
@@ -102,7 +101,6 @@ async function sendGalleryImages(thread: AnyThreadChannel, images: string[]): Pr
     }
 }
 
-
 const processGroup = Effect.fn("processGroup")(function* (
     client: Client,
     groupId: number,
@@ -118,12 +116,16 @@ const processGroup = Effect.fn("processGroup")(function* (
 
     const embedBase = yield* resolveEmbedBase();
 
-    const channel = yield* Effect.tryPromise({
-        try: () => client.channels.fetch(channelId),
-        catch: (err) => new SchedulerError({ reason: `Channel fetch failed: ${err}` }),
-    });
-    if (!channel || !("send" in channel)) return;
-    const textChannel = channel as TextChannel;
+    let textChannel = channelCache.get(channelId);
+    if (!textChannel) {
+        const fetched = yield* Effect.tryPromise({
+            try: () => client.channels.fetch(channelId),
+            catch: (err) => new SchedulerError({ reason: `Channel fetch failed: ${err}` }),
+        });
+        if (!fetched || !("send" in fetched)) return;
+        textChannel = fetched as TextChannel;
+        channelCache.set(channelId, textChannel);
+    }
 
     const posts = yield* fetchPosts(selected.subreddit, selected.source, 25).pipe(
         Effect.mapError((err) => new SchedulerError({ reason: `r/${selected.subreddit} (${selected.source}): ${err.reason}` }))
@@ -188,14 +190,13 @@ const processGroup = Effect.fn("processGroup")(function* (
 
             if (pick.isVideo) {
                 const stats = `-# 👤 u/${pick.author}  ·  📍 r/${pick.subreddit}  ·  ⬆️ ${pick.score.toLocaleString()}  ·  💬 ${pick.numComments.toLocaleString()}  ·  ${Math.round(pick.upvoteRatio * 100)}% upvoted`;
-                // Use plain reddit.com permalink for videos — vxreddit/rxddit strip audio
-                return textChannel.send({
+                return textChannel!.send({
                     content: `### [${pick.title}](${pick.permalink})\n${stats}`,
                     ...(components.length > 0 ? { components } : {}),
                 });
             }
 
-            return textChannel.send({
+            return textChannel!.send({
                 embeds: [buildPostEmbed(pick, embedBase)],
                 ...(components.length > 0 ? { components } : {}),
             });
@@ -223,12 +224,8 @@ const processGroup = Effect.fn("processGroup")(function* (
                         : ThreadAutoArchiveDuration.OneDay,
                     reason: "Reddit discussion",
                 });
-                if (selftextOverflow) {
-                    await sendSelftextOverflow(thread, pick.selftext);
-                }
-                if (comments.length > 0) {
-                    await sendCommentMessages(thread, comments);
-                }
+                if (selftextOverflow) await sendSelftextOverflow(thread, pick.selftext);
+                if (comments.length > 0) await sendCommentMessages(thread, comments);
                 if (extraImages.length > 0) {
                     const totalImages = pick.galleryImages?.length ?? extraImages.length + 1;
                     await thread.send({ content: `### 🖼️ Gallery\n-# ${totalImages} images` });
@@ -240,7 +237,6 @@ const processGroup = Effect.fn("processGroup")(function* (
     }
 });
 
-
 export class RedditScheduler {
     private intervalId: ReturnType<typeof setInterval> | undefined;
     private running = false;
@@ -248,7 +244,8 @@ export class RedditScheduler {
     start(client: Client): void {
         if (this.running) return;
         this.running = true;
-        setTimeout(() => Effect.runFork(this.tick(client)), 5_000);
+        const jitter = Math.floor(Math.random() * 10_000);
+        setTimeout(() => Effect.runFork(this.tick(client)), 5_000 + jitter);
         this.intervalId = setInterval(() => Effect.runFork(this.tick(client)), 60_000);
     }
 
@@ -258,12 +255,12 @@ export class RedditScheduler {
             this.intervalId = undefined;
         }
         this.running = false;
+        channelCache.clear();
     }
 
     private tick(client: Client): Effect.Effect<void, never> {
         return Effect.gen(function* () {
             const allFeeds = yield* getAllActiveFeeds();
-
             if (allFeeds.length === 0) return;
 
             const byGroup = new Map<number, RedditFeedWithGroup[]>();
@@ -276,7 +273,10 @@ export class RedditScheduler {
             for (const [groupId, feeds] of byGroup) {
                 yield* processGroup(client, groupId, feeds[0]!.channelId, feeds).pipe(
                     Effect.catchAll((err) =>
-                        Effect.sync(() => console.error(`[RedditScheduler] Group ${groupId} (channel: ${feeds[0]!.channelId}) error [${err._tag}]:`, "reason" in err ? err.reason : "message" in err ? err.message : err))
+                        Effect.sync(() => console.error(
+                            `[RedditScheduler] Group ${groupId} (channel: ${feeds[0]!.channelId}) error [${err._tag}]:`,
+                            "reason" in err ? err.reason : "message" in err ? err.message : err
+                        ))
                     )
                 );
                 yield* Effect.sleep("2 seconds");
