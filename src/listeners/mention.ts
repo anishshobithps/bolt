@@ -18,11 +18,11 @@ const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_SECS = 30;
 
 const LONG_TRIGGER =
-    /\b(detail|detailed|explain|elaborate|full|long|thorough|comprehensive|in[\s-]depth|step[\s-]by[\s-]step|more info|tell me more|expand)\b/i;
+    /\b(detail|detailed|explain|elaborate|full explanation|thorough|comprehensive|in[\s-]depth|step[\s-]by[\s-]step|tell me more|expand on)\b/i;
 const RESET_TRIGGER =
     /^(reset|forget|clear|wipe)\s*(my\s*)?(memory|history|chat|context|conversation)?[.!?]*$/i;
 const SEARCH_TRIGGER =
-    /\b(search|look up|lookup|what is|what are|who is|who are|where is|when did|how does|how do|latest|news|current|today|wikipedia|wiki|fact|find out|check)\b/i;
+    /\b(search|look up|lookup|latest|news|current|today|who won|what happened|recent|live score)\b/i;
 
 const CREATOR_NOTE =
     `The bot was created by Anish (<@${CREATOR_ID}>), who is the creator and is always superior. ` +
@@ -100,7 +100,12 @@ const getHistory = (guildId: string, userId: string) =>
             try: () => redis.eval(LUA_TTL_REFRESH, [key], [String(HISTORY_TTL_SECS)]),
             catch: () => new MentionApiError({ message: "TTL refresh failed" }),
         }).pipe(Effect.ignore);
-        return (Array.isArray(raw) ? raw as unknown as ChatMessage[] : []);
+
+        if (!Array.isArray(raw)) return [];
+        return raw.map((entry) => {
+            if (typeof entry === "object" && entry !== null) return entry as ChatMessage;
+            try { return JSON.parse(entry as string) as ChatMessage; } catch { return null; }
+        }).filter((m): m is ChatMessage => m !== null);
     });
 
 const checkRateLimit = (guildId: string, userId: string) =>
@@ -124,7 +129,11 @@ const pushToHistory = (guildId: string, userId: string, msg: ChatMessage) =>
         const redis = yield* RedisClient;
         yield* Effect.tryPromise({
             try: () =>
-                redis.eval(LUA_PUSH_TRIM, [historyKey(guildId, userId)], [String(MAX_HISTORY), String(HISTORY_TTL_SECS), JSON.stringify(msg)]),
+                redis.eval(LUA_PUSH_TRIM, [historyKey(guildId, userId)], [
+                    String(MAX_HISTORY),
+                    String(HISTORY_TTL_SECS),
+                    JSON.stringify(msg),
+                ]),
             catch: (err) => new MentionApiError({ message: `Redis EVAL failed: ${err}` }),
         });
     });
@@ -157,22 +166,12 @@ function smartSplit(text: string): string[] {
         }
 
         const window = text.slice(start, start + MSG_LIMIT);
-        const fenceCount = (window.match(/```/g) ?? []).length;
+        const openFences = (window.match(/```/g) ?? []).length;
         let splitPos: number;
 
-        if (fenceCount % 2 !== 0) {
-            const lastFenceInWindow = window.lastIndexOf("```");
-            const closeSearch = start + lastFenceInWindow + 3;
-            const closePos = text.indexOf("```", closeSearch);
-            if (closePos !== -1) {
-                const afterClose = closePos + 3;
-                const nl = text.indexOf("\n", afterClose);
-                const candidate = (nl !== -1 ? nl + 1 : afterClose) - start;
-                splitPos = candidate <= MSG_LIMIT ? candidate : lastFenceInWindow;
-            } else {
-                const sgl = window.lastIndexOf("\n");
-                splitPos = sgl > 0 ? sgl : MSG_LIMIT;
-            }
+        if (openFences % 2 !== 0) {
+            const lastFence = window.lastIndexOf("```");
+            splitPos = lastFence > 0 ? lastFence : MSG_LIMIT;
         } else {
             const dbl = window.lastIndexOf("\n\n");
             const sgl = window.lastIndexOf("\n");
@@ -187,7 +186,7 @@ function smartSplit(text: string): string[] {
         while (start < text.length && text[start] === "\n") start++;
     }
 
-    return chunks.filter(c => c.trim().length > 0);
+    return chunks.filter((c) => c.trim().length > 0);
 }
 
 const callOpenRouter = (history: ChatMessage[], isLong: boolean, useSearch: boolean) =>
@@ -287,10 +286,7 @@ export class MentionListener extends Listener<typeof Events.MessageCreate> {
 
         if (RESET_TRIGGER.test(rawQuery)) {
             await Effect.runPromise(
-                clearHistory(guildId, userId).pipe(
-                    Effect.provide(AppLayer),
-                    Effect.ignore
-                )
+                clearHistory(guildId, userId).pipe(Effect.provide(AppLayer), Effect.ignore)
             );
             await message.reply({
                 content: "Memory cleared \u2014 starting fresh!",
