@@ -7,6 +7,25 @@ import { fileURLToPath } from "url";
 import { join, dirname } from "path";
 import { DbLive } from "./lib/db.js";
 import { RedisLive } from "./lib/redis.js";
+import { redditScheduler } from "./lib/reddit-scheduler.js";
+
+const REQUIRED_ENV = [
+    "DISCORD_TOKEN",
+    "TURSO_URL",
+    "TURSO_AUTH_TOKEN",
+    "REDDIT_USER_AGENT",
+    "REDDIT_CLIENT_ID",
+    "REDDIT_CLIENT_SECRET",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+] as const;
+
+for (const key of REQUIRED_ENV) {
+    if (!process.env[key]) {
+        console.error(`Missing required environment variable: ${key}`);
+        process.exit(1);
+    }
+}
 
 ApplicationCommandRegistries.setDefaultBehaviorWhenNotIdentical(RegisterBehavior.BulkOverwrite);
 
@@ -28,5 +47,15 @@ const client = new SapphireClient({
     loadMessageCommandListeners: true,
     baseUserDirectory: join(__dirname),
 });
+
+async function shutdown() {
+    console.log("Shutting down...");
+    redditScheduler.stop();
+    await client.destroy();
+    process.exit(0);
+}
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 
 await client.login(process.env.DISCORD_TOKEN);
