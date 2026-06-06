@@ -3,7 +3,9 @@ import { type PostSource } from "./db.js";
 
 export { type PostSource };
 
-const REDDIT_BASE = "https://old.reddit.com";
+const REDDIT_BASE = "https://www.reddit.com";
+const REDDIT_OAUTH_BASE = "https://oauth.reddit.com";
+const REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token";
 const VX_REDDIT_BASE = "https://vxreddit.com";
 const FIX_REDDIT_BASE = "https://rxddit.com";
 const USER_AGENT = process.env.REDDIT_USER_AGENT!;
@@ -101,11 +103,48 @@ const retrySchedule = Schedule.exponential("1 second").pipe(
 const decodePost = Schema.decodeUnknown(RedditPostSchema);
 const decodeComment = Schema.decodeUnknown(RedditCommentSchema);
 
+let _accessToken: string | undefined;
+let _tokenExpiresAt = 0;
+
+async function getAccessToken(): Promise<string> {
+    if (_accessToken && Date.now() < _tokenExpiresAt) return _accessToken;
+
+    const credentials = Buffer.from(
+        `${process.env.REDDIT_CLIENT_ID}:${process.env.REDDIT_CLIENT_SECRET}`
+    ).toString("base64");
+
+    const res = await fetch(REDDIT_TOKEN_URL, {
+        method: "POST",
+        headers: {
+            Authorization: `Basic ${credentials}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": USER_AGENT,
+        },
+        body: "grant_type=client_credentials",
+        signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Token fetch failed: ${res.status} — ${body.slice(0, 200)}`);
+    }
+
+    const data = await res.json() as { access_token: string; expires_in: number };
+    _accessToken = data.access_token;
+    _tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1_000;
+    return _accessToken;
+}
+
 const redditFetch = (url: string): Effect.Effect<unknown, RedditError> =>
     Effect.tryPromise({
         try: async () => {
-            const res = await fetch(url, {
-                headers: { "User-Agent": USER_AGENT },
+            const token = await getAccessToken();
+            const oauthUrl = url.replace(REDDIT_BASE, REDDIT_OAUTH_BASE);
+            const res = await fetch(oauthUrl, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "User-Agent": USER_AGENT,
+                },
                 signal: AbortSignal.timeout(15_000),
             });
             if (!res.ok) {
