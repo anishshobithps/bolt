@@ -1,0 +1,5 @@
+[deploy]
+startCommand = "bun src/index.ts"
+
+[build]
+buildCommand = "bun install --frozen-lockfile && bun rebuild"
