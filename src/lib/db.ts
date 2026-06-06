@@ -542,7 +542,7 @@ export const getSeenPostIds = (groupId: number) =>
         const result = yield* Effect.tryPromise({
             try: () =>
                 db.execute({
-                    sql: "SELECT post_id FROM reddit_seen WHERE group_id = ?",
+                    sql: "SELECT post_id FROM reddit_seen WHERE group_id = ? ORDER BY seen_at DESC LIMIT 2000",
                     args: [groupId],
                 }),
             catch: (err) => new DbError({ message: `Failed to get seen posts: ${err}` }),
